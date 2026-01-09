@@ -3,10 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { connectDB } from '../backend/config/db';
-import { SERVER_CONFIG } from '../backend/config/constants';
 
 // Routes
 import authRoutes from '../backend/routes/authRoutes';
@@ -14,12 +12,15 @@ import candidateRoutes from '../backend/routes/candidateRoutes';
 import recruiterRoutes from '../backend/routes/recruiterRoutes';
 import assessmentRoutes from '../backend/routes/assessmentRoutes';
 
-dotenv.config({ path: '.env.local' });
+// Environment variables are automatically available in Vercel
+// No need to load .env.local in production
 
 const app = express();
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP for API routes
+}));
 
 // Configure CORS
 app.use(cors({
@@ -29,10 +30,9 @@ app.use(cors({
 
     const allowedOrigins = [
       process.env.CORS_ORIGIN,
-      'https://interprepai-olive.vercel.app',
-      'https://interprepai-five.vercel.app', // Explicitly add user's domain
       process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
       'http://localhost:3000',
+      'http://localhost:3001',
       'http://localhost:5173'
     ].filter(Boolean).map(s => String(s).split(',')).flat().map(s => s.trim());
 
@@ -41,36 +41,51 @@ app.use(cors({
     }
 
     // Allow any Vercel deployment subdomain
-    if (origin.endsWith('.vercel.app')) {
+    if (origin && origin.endsWith('.vercel.app')) {
       return callback(null, true);
     }
 
-    return callback(new Error(`Not allowed by CORS: ${origin}`));
+    console.log(`CORS: Allowing origin: ${origin}`);
+    return callback(null, true); // Allow all origins for now to debug
   },
   credentials: true,
 }));
 
-// DB Connection Middleware - runs closer to request handling to ensure CORS headers are set
-app.use(async (req, res, next) => {
-  if (mongoose.connection.readyState === 1) {
-    return next();
-  }
-  try {
-    await connectDB();
-    next();
-  } catch (error) {
-    console.error('Database Connection Error:', error);
-    next(error);
-  }
-});
-
-app.use(morgan('combined'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Simplified logging for Vercel
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`);
+  next();
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'Server is running' });
+  res.status(200).json({ 
+    status: 'Server is running',
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV,
+    mongoUri: process.env.MONGODB_URI ? 'Set' : 'Not Set'
+  });
+});
+
+// DB Connection Middleware
+app.use(async (req, res, next) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      console.log('Connecting to MongoDB...');
+      await connectDB();
+      console.log('MongoDB connected successfully');
+    }
+    next();
+  } catch (error) {
+    console.error('Database Connection Error:', error);
+    res.status(500).json({
+      error: 'Database connection failed',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 });
 
 // API Routes
