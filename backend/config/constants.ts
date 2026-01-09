@@ -1,7 +1,5 @@
-import dotenv from 'dotenv';
-
-dotenv.config({ path: '.env.local' });
-dotenv.config();
+// Environment variables are automatically available in Vercel
+// No need to load dotenv in production
 
 // Validate required environment variables
 const requiredEnvVars = [
@@ -15,8 +13,8 @@ const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingEnvVars.length > 0) {
   console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
-  console.error('Please check your .env.local file and ensure all required variables are set.');
-  process.exit(1);
+  console.error('Please check your Vercel environment variables and ensure all required variables are set.');
+  // Don't exit in serverless environment, just log the error
 }
 
 export const JWT_CONFIG = {
